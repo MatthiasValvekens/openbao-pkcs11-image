@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dockerfile": {
+    "managerFilePatterns": ["/(^|/)Containerfile$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ARG versions annotated with a '# renovate:' comment in the Containerfile",
+      "managerFilePatterns": ["/(^|/)Containerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\nARG \\w+=(?<currentValue>\\S+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "The debian base is digest-pinned; keep it on the current stable release line only",
+      "matchPackageNames": ["debian"],
+      "allowedVersions": "/^trixie-slim$/"
+    }
+  ]
+}

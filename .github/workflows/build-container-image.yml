@@ -1,0 +1,81 @@
+name: Publish OpenBao (kms-pkcs11) container image
+on:
+  push:
+    tags: [ "v*" ]
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch: {}
+
+jobs:
+  image-meta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tags: ${{ steps.docker-meta.outputs.tags }}
+      labels: ${{ steps.docker-meta.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read component versions from the Containerfile
+        id: versions
+        run: |
+          bao="$(sed -n 's/^ARG OPENBAO_VERSION=//p' Containerfile)"
+          plugin="$(sed -n 's/^ARG KMS_PKCS11_VERSION=//p' Containerfile)"
+          echo "bao=$bao" >> "$GITHUB_OUTPUT"
+          echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+      - id: docker-meta
+        uses: docker/metadata-action@v5.10.0
+        with:
+          # metadata-action lowercases the image name
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=${{ steps.versions.outputs.bao }}-pkcs11-${{ steps.versions.outputs.plugin }},enable=${{ github.ref == 'refs/heads/master' }}
+            type=sha,format=short,enable=${{ github.ref == 'refs/heads/master' }}
+            type=ref,event=pr
+            type=semver,pattern={{version}},event=tag
+  run-build:
+    runs-on: ubuntu-latest
+    needs: [image-meta]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+      - name: Set up QEMU
+        # arm64 only: the final stage runs apt-get and the smoke check under emulation
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          # PRs build both arches to prove the recipe, but do not publish
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ needs.image-meta.outputs.tags }}
+          labels: ${{ needs.image-meta.outputs.labels }}
+          cache-to: type=gha,mode=max
+          cache-from: type=gha
+          platforms: linux/amd64,linux/arm64/v8
+      - name: Sign images using GHA OIDC identity
+        if: github.event_name != 'pull_request'
+        # this digest is for the manifest list that combines all the platform images
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+        # registry names must be lowercase, github.repository may not be
+        run: cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY,,}@${DIGEST}"
