@@ -6,8 +6,8 @@
 # (see README.md). Build context is this directory.
 #
 # Versions below are bumped by Renovate (../renovate.json). The base image is
-# digest-pinned in both FROM lines; keep them identical (and identical to the
-# OpenBao Containerfile in the repo root).
+# digest-pinned in both FROM lines; keep them identical (and identical to
+# ../openbao/Containerfile).
 
 # ---------------------------------------------------------------------------
 # fetch: download and GPG-verify the upstream release artifacts, lay out the

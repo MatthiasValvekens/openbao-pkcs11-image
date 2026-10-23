@@ -1,0 +1,25 @@
+name: Publish OpenBao (kms-pkcs11) container image
+on:
+  push:
+    tags: [ "v*" ]
+    branches: [ master ]
+    paths: [ "openbao/**", ".github/workflows/openbao-image.yml", ".github/actions/build-image/**" ]
+  pull_request:
+    branches: [ master ]
+    paths: [ "openbao/**", ".github/workflows/openbao-image.yml", ".github/actions/build-image/**" ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/build-image
+        with:
+          context: openbao
+          version-tag: ${OPENBAO_VERSION}-pkcs11-${KMS_PKCS11_VERSION}
+          token: ${{ secrets.GITHUB_TOKEN }}

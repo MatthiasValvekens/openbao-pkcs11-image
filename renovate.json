@@ -7,7 +7,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "ARG versions annotated with a '# renovate:' comment in the Containerfile",
+      "description": "ARG versions annotated with a '# renovate:' comment in an image's Containerfile",
       "managerFilePatterns": ["/(^|/)Containerfile$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\nARG \\w+=(?<currentValue>\\S+)"

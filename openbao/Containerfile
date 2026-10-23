@@ -3,8 +3,9 @@
 # OpenBao + kms-pkcs11 plugin + Yubico YubiHSM PKCS#11 module, on Debian (glibc).
 # Generic recipe: no runtime configuration lives here (see README.md).
 #
-# Versions below are bumped by Renovate (renovate.json). The base image is
-# digest-pinned in both FROM lines; keep them identical.
+# Versions below are bumped by Renovate (../renovate.json). The base image is
+# digest-pinned in both FROM lines; keep them identical (and identical to
+# ../tofu/Containerfile). Build context is this directory.
 
 # ---------------------------------------------------------------------------
 # fetch: download and GPG-verify the upstream release artifacts.
