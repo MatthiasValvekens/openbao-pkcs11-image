@@ -1,0 +1,4 @@
+*
+!opentofu-release-key.asc
+!tofurc
+!tofu-destroy-guard

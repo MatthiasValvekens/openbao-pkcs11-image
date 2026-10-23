@@ -1,0 +1,151 @@
+# syntax=docker/dockerfile:1
+#
+# OpenTofu runner: tofu + the HashiCorp Vault provider in an in-image
+# filesystem mirror + the matching provider lock file + jq + a generic plan
+# guard, on Debian (glibc). Generic recipe: no configuration lives here
+# (see README.md). Build context is this directory.
+#
+# Versions below are bumped by Renovate (../renovate.json). The base image is
+# digest-pinned in both FROM lines; keep them identical (and identical to the
+# OpenBao Containerfile in the repo root).
+
+# ---------------------------------------------------------------------------
+# fetch: download and GPG-verify the upstream release artifacts, lay out the
+# provider mirror and generate the lock file from the verified archives.
+# Runs on the *build* platform. It only executes the build-platform tofu
+# (never a target-arch binary), so the arm64 build needs no emulation here.
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS fetch
+
+# renovate: datasource=github-releases depName=opentofu/opentofu extractVersion=^v(?<version>.*)$
+ARG TOFU_VERSION=1.13.1
+# The provider is the OpenTofu registry's build of hashicorp/vault, i.e. what
+# `tofu init` installs for registry.opentofu.org/hashicorp/vault.
+# renovate: datasource=github-releases depName=opentofu/terraform-provider-vault extractVersion=^v(?<version>.*)$
+ARG VAULT_PROVIDER_VERSION=5.13.0
+
+# OpenTofu release signing key (primary fingerprint). It signs both the tofu
+# release and the opentofu/terraform-provider-vault release.
+ARG OPENTOFU_GPG_FINGERPRINT=E3E6E43D84CB852EADB0051D0C0AF313E5FD9F80
+
+ARG BUILDARCH
+ARG TARGETARCH
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY opentofu-release-key.asc /tmp/opentofu-release-key.asc
+
+# Import the key, and refuse to continue unless it is the pinned one.
+RUN set -eu; \
+    export GNUPGHOME=/tmp/gnupg; mkdir -m 700 "$GNUPGHOME"; \
+    gpg --batch --import /tmp/opentofu-release-key.asc; \
+    got="$(gpg --batch --with-colons --fingerprint | awk -F: '$1=="fpr"{print $10; exit}')"; \
+    [ "$got" = "$OPENTOFU_GPG_FINGERPRINT" ] || { echo "unexpected key $got" >&2; exit 1; }
+
+# tofu: signed SHA256SUMS, then the archives against it. The target-arch binary
+# goes into the image; the build-arch one (the same file when the arches match)
+# is only used below to compute the lock file.
+RUN set -eu; \
+    export GNUPGHOME=/tmp/gnupg; mkdir /dl-tofu; cd /dl-tofu; \
+    base="https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}"; \
+    curl -fsSLO "$base/tofu_${TOFU_VERSION}_SHA256SUMS"; \
+    curl -fsSLO "$base/tofu_${TOFU_VERSION}_SHA256SUMS.gpgsig"; \
+    gpg --batch --verify "tofu_${TOFU_VERSION}_SHA256SUMS.gpgsig" "tofu_${TOFU_VERSION}_SHA256SUMS"; \
+    for arch in $(printf '%s\n' "$BUILDARCH" "$TARGETARCH" | sort -u); do \
+        zip="tofu_${TOFU_VERSION}_linux_${arch}.zip"; \
+        curl -fsSLO "$base/$zip"; \
+        grep " $zip\$" "tofu_${TOFU_VERSION}_SHA256SUMS" | sha256sum -c -; \
+    done; \
+    install -d /out/usr/bin /build-tofu; \
+    unzip -q -o "tofu_${TOFU_VERSION}_linux_${TARGETARCH}.zip" tofu -d /tmp/tofu-target; \
+    install -m 0755 /tmp/tofu-target/tofu /out/usr/bin/tofu; \
+    unzip -q -o "tofu_${TOFU_VERSION}_linux_${BUILDARCH}.zip" tofu -d /build-tofu
+
+# Provider: signed SHA256SUMS, then BOTH platform archives against it (the lock
+# file carries hashes for both, whichever arch this build targets). Only the
+# target-arch archive is unpacked into the mirror. It is unpacked unmodified, so
+# its `h1:` directory hash equals the archive's.
+RUN set -eu; \
+    export GNUPGHOME=/tmp/gnupg; mkdir /dl-prov; cd /dl-prov; \
+    base="https://github.com/opentofu/terraform-provider-vault/releases/download/v${VAULT_PROVIDER_VERSION}"; \
+    pfx="terraform-provider-vault_${VAULT_PROVIDER_VERSION}"; \
+    curl -fsSLO "$base/${pfx}_SHA256SUMS"; curl -fsSLO "$base/${pfx}_SHA256SUMS.sig"; \
+    gpg --batch --verify "${pfx}_SHA256SUMS.sig" "${pfx}_SHA256SUMS"; \
+    for arch in amd64 arm64; do \
+        curl -fsSLO "$base/${pfx}_linux_${arch}.zip"; \
+        grep " ${pfx}_linux_${arch}.zip\$" "${pfx}_SHA256SUMS" | sha256sum -c -; \
+    done; \
+    dest="/out/usr/share/tofu/providers/registry.opentofu.org/hashicorp/vault/${VAULT_PROVIDER_VERSION}/linux_${TARGETARCH}"; \
+    mkdir -p "$dest"; unzip -q "${pfx}_linux_${TARGETARCH}.zip" -d "$dest"; \
+    test -x "$dest/terraform-provider-vault"
+
+# Lock file: `tofu providers lock` computes the h1 hashes from the two verified
+# archives (packed filesystem mirror, no network), then the zh hashes (the
+# archives' sha256, as in the verified SHA256SUMS) are added. Both platforms,
+# so every arch's image ships the identical file.
+RUN set -eu; \
+    pfx="terraform-provider-vault_${VAULT_PROVIDER_VERSION}"; \
+    packed=/tmp/packed/registry.opentofu.org/hashicorp/vault; \
+    mkdir -p "$packed" /tmp/lockwork; \
+    cp "/dl-prov/${pfx}_linux_amd64.zip" "/dl-prov/${pfx}_linux_arm64.zip" "$packed/"; \
+    printf 'terraform {\n  required_providers {\n    vault = {\n      source = "hashicorp/vault"\n    }\n  }\n}\n' > /tmp/lockwork/lock.tf; \
+    cd /tmp/lockwork; \
+    TF_CLI_CONFIG_FILE=/dev/null CHECKPOINT_DISABLE=1 /build-tofu/tofu providers lock \
+        -fs-mirror=/tmp/packed -platform=linux_amd64 -platform=linux_arm64 >/dev/null; \
+    for arch in amd64 arm64; do \
+        echo "zh:$(sha256sum "/dl-prov/${pfx}_linux_${arch}.zip" | cut -d' ' -f1)"; \
+    done | sort > zh.txt; \
+    awk 'FNR==NR { z[++n] = $0; next } /^  \]$/ { for (i = 1; i <= n; i++) printf "    \"%s\",\n", z[i] } { print }' \
+        zh.txt .terraform.lock.hcl > lock.out; \
+    install -D -m 0644 lock.out /out/usr/share/tofu/.terraform.lock.hcl; \
+    cat /out/usr/share/tofu/.terraform.lock.hcl
+
+# ---------------------------------------------------------------------------
+# final
+# ---------------------------------------------------------------------------
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
+
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates jq; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt /var/log/dpkg.log /var/log/alternatives.log \
+           /usr/share/man /usr/share/info; \
+    groupadd --system --gid 10001 tofu; \
+    useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin tofu
+
+COPY --from=fetch /out/ /
+COPY --chmod=0644 tofurc /etc/tofu/tofurc
+COPY --chmod=0755 tofu-destroy-guard /usr/bin/tofu-destroy-guard
+
+# - Providers come from the in-image mirror only (see tofurc).
+# - The shipped lock file must be copied next to the .tf files; `init` then
+#   verifies against it and, being read-only, refuses to change it.
+# - Nothing is written outside the working directory (.terraform) and TMPDIR.
+ENV TF_CLI_CONFIG_FILE=/etc/tofu/tofurc \
+    TF_CLI_ARGS_init=-lockfile=readonly \
+    TF_IN_AUTOMATION=1 \
+    TF_INPUT=0 \
+    CHECKPOINT_DISABLE=1
+
+# Build-time sanity: init against the mirror and shipped lock file works with
+# a read-only layout, as the unprivileged user, and does not touch the lock.
+# (tofu does not execute the provider during `init`, so this is cheap under
+# emulation.)
+USER 10001:10001
+RUN set -eu; \
+    tofu version >/dev/null; \
+    d="$(mktemp -d)"; cd "$d"; \
+    printf 'terraform {\n  required_providers {\n    vault = {\n      source = "hashicorp/vault"\n      version = ">= 1.0"\n    }\n  }\n}\n' > main.tf; \
+    cp /usr/share/tofu/.terraform.lock.hcl .; \
+    sha256sum .terraform.lock.hcl > lock.sum; \
+    tofu init >/dev/null; \
+    sha256sum -c lock.sum; \
+    cd /; rm -rf "$d"
+
+LABEL org.opencontainers.image.title="opentofu-vault-runner" \
+      org.opencontainers.image.description="OpenTofu with an offline HashiCorp Vault provider mirror, its lock file, jq and a plan guard"
+
+ENTRYPOINT ["/usr/bin/tofu"]
+CMD ["version"]

@@ -1,0 +1,63 @@
+{
+  "format_version": "1.2",
+  "resource_changes": [
+    {
+      "address": "vault_mount.m",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "after": {
+          "path": "kvA"
+        },
+        "before": {
+          "path": "kvA"
+        }
+      },
+      "type": "vault_mount"
+    },
+    {
+      "address": "vault_mount.m2",
+      "change": {
+        "actions": [
+          "forget"
+        ],
+        "after": null,
+        "before": {
+          "path": "kvB"
+        }
+      },
+      "type": "vault_mount"
+    },
+    {
+      "address": "vault_policy.p1",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "after": {
+          "path": null
+        },
+        "before": {
+          "path": null
+        }
+      },
+      "type": "vault_policy"
+    },
+    {
+      "address": "vault_policy.p2",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "after": {
+          "path": null
+        },
+        "before": {
+          "path": null
+        }
+      },
+      "type": "vault_policy"
+    }
+  ]
+}

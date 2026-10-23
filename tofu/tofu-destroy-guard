@@ -1,0 +1,58 @@
+#!/bin/sh
+# tofu-destroy-guard: refuse a saved OpenTofu plan that deletes things it should
+# not, or that renames a mount.
+#
+# Usage:
+#   tofu-destroy-guard PLANFILE      # runs `tofu show -json PLANFILE`
+#   tofu-destroy-guard -             # reads `tofu show -json` output on stdin
+#
+# Input (environment):
+#   TOFU_GUARD_ALLOW_DELETE  resource types whose deletion (or replacement) is
+#                            acceptable, separated by commas and/or whitespace.
+#                            Unset or empty: no deletion is acceptable.
+#   TOFU_GUARD_PATH_TYPES    resource types checked for an in-place `path`
+#                            change (a remount, which `prevent_destroy` does
+#                            not see). Default:
+#                            "vault_mount vault_auth_backend vault_jwt_auth_backend"
+#                            Set it to a single "-" to disable the check.
+#
+# Rules: a change whose actions include "delete" fails unless its resource type
+# is allowlisted ("delete+create", i.e. a replacement, is a delete). "forget"
+# (from `removed { lifecycle { destroy = false } }`) is not a delete and
+# passes. An update that changes `before.path` to a different `after.path` on
+# a path-checked type fails.
+#
+# Exit status: 0 = plan acceptable, 1 = refused, 2 = usage or internal error.
+# Any failure to obtain or parse the plan is a refusal, never a pass.
+set -eu
+
+[ "$#" -eq 1 ] || { echo "usage: tofu-destroy-guard PLANFILE|-" >&2; exit 2; }
+
+if [ "$1" = "-" ]; then
+    json="$(cat)"
+else
+    json="$(tofu show -json "$1")" || { echo "tofu-destroy-guard: tofu show failed" >&2; exit 2; }
+fi
+
+allow="$(printf '%s' "${TOFU_GUARD_ALLOW_DELETE:-}" | tr -s ' \t\n,' ',')"
+pathtypes="$(printf '%s' "${TOFU_GUARD_PATH_TYPES:-vault_mount vault_auth_backend vault_jwt_auth_backend}" | tr -s ' \t\n,' ',')"
+
+# `jq -e` makes a null/false result an error; the program always yields a string.
+bad="$(printf '%s' "$json" | jq -er --arg allow "$allow" --arg pathtypes "$pathtypes" '
+  ($allow | split(",") | map(select(length > 0))) as $a
+  | ($pathtypes | split(",") | map(select(length > 0 and . != "-"))) as $p
+  | [ .resource_changes[]?
+      | select(
+          ((.change.actions | index("delete")) and ((.type | IN($a[])) | not))
+          or ((.type | IN($p[]))
+              and (.change.actions | index("update"))
+              and (.change.before.path != .change.after.path))
+        )
+      | "\(.address)\t\(.change.actions | join("+"))"
+    ] | join("\n")')" || { echo "tofu-destroy-guard: could not evaluate the plan" >&2; exit 2; }
+
+if [ -n "$bad" ]; then
+    echo "tofu-destroy-guard: refusing; a human must apply these changes:" >&2
+    echo "$bad" >&2
+    exit 1
+fi

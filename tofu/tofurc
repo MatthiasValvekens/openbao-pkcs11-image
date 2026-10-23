@@ -1,0 +1,14 @@
+# OpenTofu CLI configuration for the runner image (TF_CLI_CONFIG_FILE).
+#
+# Provider installation is restricted to the filesystem mirror baked into the
+# image. There is deliberately no `direct {}` block and no network mirror, so
+# `tofu init` never talks to a registry: a provider (or version) that is not in
+# the image fails at init instead of being fetched.
+provider_installation {
+  filesystem_mirror {
+    path = "/usr/share/tofu/providers"
+  }
+}
+
+# No version-check / announcement phone-home.
+disable_checkpoint = true
