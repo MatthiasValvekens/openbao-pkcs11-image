@@ -2,9 +2,7 @@
 
 Two sister images, one directory each. Every directory holds a `Containerfile`
 and is its own build context. Both images are built on Debian stable (glibc) by
-GitHub Actions, published to ghcr for `linux/amd64` and `linux/arm64`, and signed
-with keyless cosign. Both are generic recipes: no configuration, server
-addresses or secrets.
+GitHub Actions, published to ghcr for `linux/amd64` and `linux/arm64`.
 
 | Directory | Image | Version tag |
 |---|---|---|
