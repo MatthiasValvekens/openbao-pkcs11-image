@@ -113,7 +113,10 @@ RUN set -eu; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt /var/log/dpkg.log /var/log/alternatives.log \
            /usr/share/man /usr/share/info; \
     groupadd --system --gid 10001 tofu; \
-    useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin tofu
+    useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin tofu; \
+    # Created here: COPY --chmod would give a parent it creates the file's mode
+    # (0644, no search bit), and tofu would silently fall back to the registry.
+    install -d -m 0755 /etc/tofu
 
 COPY --from=fetch /out/ /
 COPY --chmod=0644 tofurc /etc/tofu/tofurc
@@ -131,10 +134,13 @@ ENV TF_CLI_CONFIG_FILE=/etc/tofu/tofurc \
 
 # Build-time sanity: init against the mirror and shipped lock file works with
 # a read-only layout, as the unprivileged user, and does not touch the lock.
+# No network, so init can only succeed from the mirror: with network it would
+# fetch from the registry and hide a broken CLI config.
 # (tofu does not execute the provider during `init`, so this is cheap under
 # emulation.)
 USER 10001:10001
-RUN set -eu; \
+RUN --network=none set -eu; \
+    test -r "$TF_CLI_CONFIG_FILE"; \
     tofu version >/dev/null; \
     d="$(mktemp -d)"; cd "$d"; \
     printf 'terraform {\n  required_providers {\n    vault = {\n      source = "hashicorp/vault"\n      version = ">= 1.0"\n    }\n  }\n}\n' > main.tf; \
