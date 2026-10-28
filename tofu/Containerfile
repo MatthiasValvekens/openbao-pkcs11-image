@@ -15,7 +15,7 @@
 # Runs on the *build* platform. It only executes the build-platform tofu
 # (never a target-arch binary), so the arm64 build needs no emulation here.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31 AS fetch
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS fetch
 
 # renovate: datasource=github-releases depName=opentofu/opentofu extractVersion=^v(?<version>.*)$
 ARG TOFU_VERSION=1.13.2
@@ -105,7 +105,7 @@ RUN set -eu; \
 # ---------------------------------------------------------------------------
 # final
 # ---------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 RUN set -eu; \
     apt-get update; \
