@@ -17,7 +17,7 @@ FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:f6b08b09a05725f9431502d
 # renovate: datasource=github-releases depName=openbao/openbao extractVersion=^v(?<version>.*)$
 ARG OPENBAO_VERSION=2.7.2
 # renovate: datasource=github-releases depName=openbao/openbao-plugins extractVersion=^kms-pkcs11-v(?<version>.*)$
-ARG KMS_PKCS11_VERSION=0.2.1
+ARG KMS_PKCS11_VERSION=0.3.0
 
 # OpenBao release signing key (primary fingerprint, as published on openbao.org).
 ARG OPENBAO_GPG_FINGERPRINT=66D15FDD87287219C8E15478D200CD702853E6D0
