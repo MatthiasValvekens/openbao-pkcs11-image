@@ -18,7 +18,7 @@
 FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS fetch
 
 # renovate: datasource=github-releases depName=opentofu/opentofu extractVersion=^v(?<version>.*)$
-ARG TOFU_VERSION=1.13.2
+ARG TOFU_VERSION=1.13.8
 # The provider is the OpenTofu registry's build of hashicorp/vault, i.e. what
 # `tofu init` installs for registry.opentofu.org/hashicorp/vault.
 # renovate: datasource=github-releases depName=opentofu/terraform-provider-vault extractVersion=^v(?<version>.*)$
