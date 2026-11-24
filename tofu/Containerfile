@@ -22,7 +22,7 @@ ARG TOFU_VERSION=1.13.10
 # The provider is the OpenTofu registry's build of hashicorp/vault, i.e. what
 # `tofu init` installs for registry.opentofu.org/hashicorp/vault.
 # renovate: datasource=github-releases depName=opentofu/terraform-provider-vault extractVersion=^v(?<version>.*)$
-ARG VAULT_PROVIDER_VERSION=5.13.0
+ARG VAULT_PROVIDER_VERSION=5.14.0
 
 # OpenTofu release signing key (primary fingerprint). It signs both the tofu
 # release and the opentofu/terraform-provider-vault release.
